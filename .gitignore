@@ -32,7 +32,7 @@ Thumbs.db
 # Logs
 *.log
 logs/
-
+.out
 # Claude config
 .claude/
 
