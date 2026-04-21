@@ -8,7 +8,12 @@ import torch
 import torch.nn.functional as F
 from tqdm import tqdm
 
-from UniADet_lib import UniADetZeroShot, available_models, get_backbone_data_config, load_backbone
+from UniADet_lib import (
+    UniADetZeroShotLateFusion,
+    available_models,
+    get_backbone_data_config,
+    load_backbone,
+)
 from uniadet_dataset import UniADetDataset
 from utils.backbone_config import resolve_features_list
 from utils.logger import get_logger
@@ -51,6 +56,7 @@ def save_checkpoint(model, args, epoch, checkpoint_path, extra_fields=None):
         "cls_loss_weight": args.cls_loss_weight,
         "seg_loss_weight": args.seg_loss_weight,
         "epoch": epoch,
+        "fusion_mode": "late_fusion",
     }
     if extra_fields:
         checkpoint.update(extra_fields)
@@ -91,7 +97,7 @@ def train(args):
     backbone = load_backbone(args.backbone, device=device, image_size=args.image_size)
     args.features_list = resolve_features_list(args.features_list, backbone.total_layers, logger=logger)
 
-    model = UniADetZeroShot(
+    model = UniADetZeroShotLateFusion(
         backbone=backbone,
         feature_layers=args.features_list,
         image_size=args.image_size,
@@ -132,7 +138,7 @@ def train(args):
     eval_history = []
 
     logger.info(
-        f"UniADet-ZS | Train: {args.train_dataset} ({args.data_mode}) | Backbone: {args.backbone} | "
+        f"UniADet-ZS-LateFusion | Train: {args.train_dataset} ({args.data_mode}) | Backbone: {args.backbone} | "
         f"Image: {args.image_size} | Layers: {args.features_list} | CAA: {args.enable_caa} | "
         f"Mean/Std: {backbone_cfg['mean']} / {backbone_cfg['std']} | "
         f"Loss Weights: cls={args.cls_loss_weight}, seg={args.seg_loss_weight}"
@@ -209,7 +215,7 @@ def train(args):
                 logger=logger,
                 data_mode=args.eval_data_mode,
                 num_workers=args.num_workers,
-                desc=f"UniADet-ZS eval @ epoch {epoch + 1}",
+                desc=f"UniADet-ZS-LateFusion eval @ epoch {epoch + 1}",
                 compute_original_size_metrics=args.eval_original_size,
             )
             selected_score = select_eval_metric(metric_summary, args.eval_metric)
@@ -283,9 +289,9 @@ def train(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser("UniADet Zero-Shot Training", add_help=True)
+    parser = argparse.ArgumentParser("UniADet Zero-Shot Training (Late Fusion)", add_help=True)
     parser.add_argument("--train_data_path", type=str, required=True, help="auxiliary training dataset path")
-    parser.add_argument("--save_path", type=str, default="./checkpoints_uniadet_zs", help="checkpoint save path")
+    parser.add_argument("--save_path", type=str, default="./checkpoints_uniadet_zs_late_fusion", help="checkpoint save path")
     parser.add_argument("--train_dataset", type=str, default="visa", help="training dataset name")
     parser.add_argument("--data_mode", type=str, default="test", choices=["train", "test"], help="meta split to use")
     parser.add_argument(

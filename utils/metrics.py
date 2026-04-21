@@ -1,7 +1,6 @@
 from sklearn.metrics import auc, roc_auc_score, average_precision_score, precision_recall_curve
 from tabulate import tabulate
 import numpy as np
-import logging
 from skimage import measure
 
 def cal_pro_score(masks, amaps, max_step=200, expect_fpr=0.3):
@@ -40,8 +39,9 @@ def cal_pro_score(masks, amaps, max_step=200, expect_fpr=0.3):
     fpr_norm = (fpr_valid - fpr_valid.min()) / (fpr_valid.max() - fpr_valid.min())
     return auc(fpr_norm, pro_valid)
 
-def compute_metrics(results, obj_list, logger):
+def compute_metrics(results, obj_list, logger=None):
     table_ls = []
+    per_class_metrics = []
     for obj in obj_list:
         obj_data = results[obj]
         # Pixel-level data
@@ -77,6 +77,18 @@ def compute_metrics(results, obj_list, logger):
         sample_f1 = np.max(2 * (precisions_sp * recalls_sp) / (precisions_sp + recalls_sp + 1e-8)) if gt_sp.size else 0
         
         # Format table
+        metric_row = {
+            "class": obj,
+            "pixel_auroc": float(pixel_auroc),
+            "pixel_f1": float(pixel_f1),
+            "pixel_ap": float(pixel_ap),
+            "pixel_aupro": float(pixel_aupro),
+            "sample_auroc": float(sample_auroc),
+            "sample_f1": float(sample_f1),
+            "sample_ap": float(sample_ap),
+        }
+        per_class_metrics.append(metric_row)
+
         table = [
             obj,
             f"{pixel_auroc * 100:.1f}",
@@ -91,7 +103,7 @@ def compute_metrics(results, obj_list, logger):
     
     # === New: Calculate and add mean row ===
     if len(table_ls) == 0:
-        return
+        return {"per_class": [], "mean": {}}
 
     # Extract numeric part (skip first column class name)
     numeric_data = []
@@ -100,8 +112,17 @@ def compute_metrics(results, obj_list, logger):
         numeric_data.append(numeric_values)
 
     # Calculate mean for each column
-    mean_values = np.array(numeric_data).mean(axis=0)
-    mean_values = [f"{v:.1f}" for v in mean_values]
+    mean_array = np.array(numeric_data).mean(axis=0)
+    mean_values = [f"{v:.1f}" for v in mean_array]
+    mean_metrics = {
+        "pixel_auroc": float(mean_array[0] / 100.0),
+        "pixel_f1": float(mean_array[1] / 100.0),
+        "pixel_ap": float(mean_array[2] / 100.0),
+        "pixel_aupro": float(mean_array[3] / 100.0),
+        "sample_auroc": float(mean_array[4] / 100.0),
+        "sample_f1": float(mean_array[5] / 100.0),
+        "sample_ap": float(mean_array[6] / 100.0),
+    }
 
     # Add mean row
     mean_row = ['Mean'] + mean_values
@@ -111,4 +132,12 @@ def compute_metrics(results, obj_list, logger):
     headers = ['Class', 'Pixel-AUROC', 'Pixel-F1', 'Pixel-AP', 'Pixel-AUPRO', 
               'Sample-AUROC', 'Sample-F1', 'Sample-AP']
     results_table = tabulate(table_ls, headers=headers, tablefmt='pipe')
-    logger.info("\n%s", results_table)
+    if logger is not None:
+        logger.info("\n%s", results_table)
+    else:
+        print(results_table)
+
+    return {
+        "per_class": per_class_metrics,
+        "mean": mean_metrics,
+    }

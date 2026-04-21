@@ -5,7 +5,6 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 import torch.utils.data as data
 from PIL import Image
 
@@ -23,6 +22,7 @@ class UniADetDataset(data.Dataset):
         enable_caa=False,
         caa_prob=0.5,
         caa_grid_sizes=(2, 3),
+        return_original_mask=False,
     ):
         self.root = root
         self.transform = transform
@@ -31,6 +31,7 @@ class UniADetDataset(data.Dataset):
         self.enable_caa = enable_caa
         self.caa_prob = caa_prob
         self.caa_grid_sizes = tuple(int(size) for size in caa_grid_sizes)
+        self.return_original_mask = return_original_mask
 
         meta_info = json.load(open(f"{self.root}/meta.json", "r"))
         meta_info = meta_info[mode]
@@ -68,26 +69,26 @@ class UniADetDataset(data.Dataset):
                 mask_np = np.array(Image.open(mask_path).convert("L")) > 0
                 mask = Image.fromarray(mask_np.astype(np.uint8) * 255, mode="L")
 
+        return image, mask, data_item
+
+    def _apply_transforms(self, image: Image.Image, mask: Image.Image):
         image = self.transform(image) if self.transform is not None else image
         mask = self.target_transform(mask) if self.target_transform is not None else mask
         mask = torch.zeros(1, image.shape[-2], image.shape[-1]) if mask is None else mask
         mask = (mask > 0.5).float()
-        return image, mask, data_item
+        return image, mask
 
     def _grid_boundaries(self, size: int, grid_size: int) -> List[Tuple[int, int]]:
         boundaries = torch.linspace(0, size, steps=grid_size + 1).round().to(torch.int64).tolist()
         return [(int(boundaries[i]), int(boundaries[i + 1])) for i in range(grid_size)]
 
-    def _resize_image(self, image: torch.Tensor, size: Tuple[int, int]) -> torch.Tensor:
-        return F.interpolate(
-            image.unsqueeze(0),
-            size=size,
-            mode="bilinear",
-            align_corners=False,
-        ).squeeze(0)
+    def _resize_image(self, image: Image.Image, size: Tuple[int, int]) -> Image.Image:
+        height, width = size
+        return image.resize((width, height), resample=Image.BILINEAR)
 
-    def _resize_mask(self, mask: torch.Tensor, size: Tuple[int, int]) -> torch.Tensor:
-        return F.interpolate(mask.unsqueeze(0), size=size, mode="nearest").squeeze(0)
+    def _resize_mask(self, mask: Image.Image, size: Tuple[int, int]) -> Image.Image:
+        height, width = size
+        return mask.resize((width, height), resample=Image.NEAREST)
 
     def _sample_same_class_indices(self, cls_name: str, anomaly: int, count: int) -> List[int]:
         candidate_indices = self.class_to_indices.get(cls_name, [])
@@ -101,15 +102,15 @@ class UniADetDataset(data.Dataset):
 
     def _apply_grid_mosaic(
         self,
-        image: torch.Tensor,
-        mask: torch.Tensor,
+        image: Image.Image,
+        mask: Image.Image,
         cls_name: str,
         anomaly: int,
     ):
         grid_size = random.choice(self.caa_grid_sizes)
-        h, w = image.shape[-2:]
-        row_ranges = self._grid_boundaries(h, grid_size)
-        col_ranges = self._grid_boundaries(w, grid_size)
+        width, height = image.size
+        row_ranges = self._grid_boundaries(height, grid_size)
+        col_ranges = self._grid_boundaries(width, grid_size)
 
         sample_indices = self._sample_same_class_indices(cls_name, anomaly, grid_size * grid_size - 1)
         tiles = [(image, mask, anomaly)]
@@ -119,8 +120,8 @@ class UniADetDataset(data.Dataset):
 
         random.shuffle(tiles)
 
-        mosaic_image = torch.zeros_like(image)
-        mosaic_mask = torch.zeros_like(mask)
+        mosaic_image = Image.new("RGB", (width, height))
+        mosaic_mask = Image.new("L", (width, height), color=0)
         mosaic_anomaly = 0
         tile_cursor = 0
 
@@ -130,24 +131,25 @@ class UniADetDataset(data.Dataset):
                 target_size = (row_end - row_start, col_end - col_start)
                 tile_image = self._resize_image(tile_image, target_size)
                 tile_mask = self._resize_mask(tile_mask, target_size)
-                mosaic_image[:, row_start:row_end, col_start:col_end] = tile_image
-                mosaic_mask[:, row_start:row_end, col_start:col_end] = tile_mask
+                mosaic_image.paste(tile_image, (col_start, row_start))
+                mosaic_mask.paste(tile_mask, (col_start, row_start))
                 mosaic_anomaly = max(mosaic_anomaly, int(tile_anomaly))
                 tile_cursor += 1
 
-        return mosaic_image, (mosaic_mask > 0.5).float(), mosaic_anomaly
+        return mosaic_image, mosaic_mask, mosaic_anomaly
 
-    def _apply_grid_crop(self, image: torch.Tensor, mask: torch.Tensor, anomaly: int):
+    def _apply_grid_crop(self, image: Image.Image, mask: Image.Image, anomaly: int):
         grid_size = random.choice(self.caa_grid_sizes)
-        h, w = image.shape[-2:]
-        row_ranges = self._grid_boundaries(h, grid_size)
-        col_ranges = self._grid_boundaries(w, grid_size)
+        width, height = image.size
+        row_ranges = self._grid_boundaries(height, grid_size)
+        col_ranges = self._grid_boundaries(width, grid_size)
+        mask_array = np.array(mask)
 
         candidates = []
         for row_start, row_end in row_ranges:
             for col_start, col_end in col_ranges:
-                patch_mask = mask[:, row_start:row_end, col_start:col_end]
-                contains_anomaly = bool(patch_mask.sum().item() > 0)
+                patch_mask = mask_array[row_start:row_end, col_start:col_end]
+                contains_anomaly = bool(patch_mask.sum() > 0)
                 if anomaly == 0 or contains_anomaly:
                     candidates.append((row_start, row_end, col_start, col_end))
 
@@ -159,12 +161,12 @@ class UniADetDataset(data.Dataset):
             ]
 
         row_start, row_end, col_start, col_end = random.choice(candidates)
-        crop_image = image[:, row_start:row_end, col_start:col_end]
-        crop_mask = mask[:, row_start:row_end, col_start:col_end]
-        crop_image = self._resize_image(crop_image, (h, w))
-        crop_mask = self._resize_mask(crop_mask, (h, w))
-        crop_anomaly = int(crop_mask.sum().item() > 0)
-        return crop_image, (crop_mask > 0.5).float(), crop_anomaly
+        crop_image = image.crop((col_start, row_start, col_end, row_end))
+        crop_mask = mask.crop((col_start, row_start, col_end, row_end))
+        crop_image = self._resize_image(crop_image, (height, width))
+        crop_mask = self._resize_mask(crop_mask, (height, width))
+        crop_anomaly = int(np.array(crop_mask).sum() > 0)
+        return crop_image, crop_mask, crop_anomaly
 
     def __getitem__(self, index):
         image, image_mask, data_item = self._load_raw_item(index)
@@ -177,8 +179,13 @@ class UniADetDataset(data.Dataset):
             else:
                 image, image_mask, anomaly = self._apply_grid_crop(image, image_mask, anomaly)
 
+        original_mask = None
+        if self.return_original_mask:
+            original_mask = torch.from_numpy((np.array(image_mask) > 0).astype(np.float32)).unsqueeze(0)
+
+        image, image_mask = self._apply_transforms(image, image_mask)
         cls_id = self.class_name_map_class_id.get(cls_name, 0)
-        return {
+        sample = {
             "img": image,
             "img_mask": image_mask,
             "cls_name": cls_name,
@@ -186,3 +193,6 @@ class UniADetDataset(data.Dataset):
             "img_path": os.path.join(self.root, data_item["img_path"]),
             "cls_id": cls_id,
         }
+        if original_mask is not None:
+            sample["orig_img_mask"] = original_mask
+        return sample

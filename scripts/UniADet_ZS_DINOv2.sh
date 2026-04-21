@@ -10,6 +10,8 @@ TEMPERATURE=0.07
 SCORE_FUSION_WEIGHT=0.5
 FEATURE_LAYERS=(12 15 18 21 24)
 ENABLE_CAA=1
+EVAL_INTERVAL=3
+EVAL_METRIC="mean_auc"
 
 MVTEC_PATH="/mnt/nvme-data1/pzh_proj/datasets/mvtec"
 VISA_PATH="/mnt/nvme-data1/pzh_proj/datasets/visa"
@@ -24,6 +26,8 @@ echo "Image Size: ${IMAGE_SIZE}"
 echo "Temperature: ${TEMPERATURE}"
 echo "Score Fusion Weight: ${SCORE_FUSION_WEIGHT}"
 echo "Feature Layers: ${FEATURE_LAYERS[*]}"
+echo "Periodic Eval: every ${EVAL_INTERVAL} epochs"
+echo "Best Checkpoint Metric: ${EVAL_METRIC}"
 if [ "${ENABLE_CAA}" -eq 1 ]; then
     echo "CAA: ENABLED"
 else
@@ -71,6 +75,10 @@ run_uniadet_zs_experiment() {
             --image_size "${IMAGE_SIZE}" \
             --temperature "${TEMPERATURE}" \
             --score_fusion_weight "${SCORE_FUSION_WEIGHT}" \
+            --test_data_path "${test_path}" \
+            --test_dataset "${test_dataset}" \
+            --eval_interval "${EVAL_INTERVAL}" \
+            --eval_metric "${EVAL_METRIC}" \
             --enable_caa \
             --device "${GPU}"
     else
@@ -86,19 +94,30 @@ run_uniadet_zs_experiment() {
             --image_size "${IMAGE_SIZE}" \
             --temperature "${TEMPERATURE}" \
             --score_fusion_weight "${SCORE_FUSION_WEIGHT}" \
+            --test_data_path "${test_path}" \
+            --test_dataset "${test_dataset}" \
+            --eval_interval "${EVAL_INTERVAL}" \
+            --eval_metric "${EVAL_METRIC}" \
             --device "${GPU}"
     fi
 
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Training completed!"
     echo ""
 
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Testing on ${test_dataset} (epoch ${epochs})..."
+    local selected_checkpoint="${checkpoint_dir}/best_model.pth"
+    local selected_name="best"
+    if [ ! -f "${selected_checkpoint}" ]; then
+        selected_checkpoint="${checkpoint_dir}/final_model.pth"
+        selected_name="final"
+    fi
+
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Testing on ${test_dataset} (${selected_name} checkpoint)..."
     python test_uniadet_zs.py \
         --test_data_path "${test_path}" \
         --test_dataset "${test_dataset}" \
         --data_mode test \
-        --checkpoint_path "${checkpoint_dir}/epoch_${epochs}.pth" \
-        --save_path "${result_dir}/epoch_${epochs}" \
+        --checkpoint_path "${selected_checkpoint}" \
+        --save_path "${result_dir}/${selected_name}" \
         --device "${GPU}"
 
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Test completed!"

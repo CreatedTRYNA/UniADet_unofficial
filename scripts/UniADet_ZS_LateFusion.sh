@@ -4,8 +4,8 @@ set -e
 
 BATCH_SIZE=8
 GPU=cuda:6
-BACKBONE="DINOv3 ViT-L/16"
-IMAGE_SIZE=512
+BACKBONE="ViT-L/14@336px"
+IMAGE_SIZE=518
 TEMPERATURE=0.07
 SCORE_FUSION_WEIGHT=0.5
 FEATURE_LAYERS=(12 15 18 21 24)
@@ -13,11 +13,12 @@ ENABLE_CAA=1
 EVAL_INTERVAL=3
 EVAL_METRIC="mean_auc"
 
+
 MVTEC_PATH="/mnt/nvme-data1/pzh_proj/datasets/mvtec"
 VISA_PATH="/mnt/nvme-data1/pzh_proj/datasets/visa"
 
 echo "================================================================"
-echo "UniADet Zero-Shot Cross-Dataset Evaluation - DINOv3 ViT-L/16"
+echo "UniADet Zero-Shot Cross-Dataset Evaluation - CLIP (Late Fusion)"
 echo "================================================================"
 echo "Batch Size: ${BATCH_SIZE}"
 echo "GPU: ${GPU}"
@@ -50,7 +51,7 @@ run_uniadet_zs_experiment() {
     local epochs=$5
 
     local exp_name="${train_dataset}_to_${test_dataset}"
-    local exp_dir="./experiments/uniadet_zs_dinov3/${exp_name}"
+    local exp_dir="./experiments/uniadet_zs_late_fusion/${exp_name}"
     local checkpoint_dir="${exp_dir}/checkpoints"
     local result_dir="${exp_dir}/results"
 
@@ -63,7 +64,7 @@ run_uniadet_zs_experiment() {
 
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Training on ${train_dataset}..."
     if [ "${ENABLE_CAA}" -eq 1 ]; then
-        python train_uniadet_zs.py \
+        python train_uniadet_zs_late_fusion.py \
             --train_data_path "${train_path}" \
             --save_path "${checkpoint_dir}" \
             --train_dataset "${train_dataset}" \
@@ -82,7 +83,7 @@ run_uniadet_zs_experiment() {
             --enable_caa \
             --device "${GPU}"
     else
-        python train_uniadet_zs.py \
+        python train_uniadet_zs_late_fusion.py \
             --train_data_path "${train_path}" \
             --save_path "${checkpoint_dir}" \
             --train_dataset "${train_dataset}" \
@@ -112,7 +113,7 @@ run_uniadet_zs_experiment() {
     fi
 
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Testing on ${test_dataset} (${selected_name} checkpoint)..."
-    python test_uniadet_zs.py \
+    python test_uniadet_zs_late_fusion.py \
         --test_data_path "${test_path}" \
         --test_dataset "${test_dataset}" \
         --data_mode test \
@@ -151,5 +152,5 @@ run_uniadet_zs_experiment \
 
 echo ""
 echo "================================================================"
-echo "ALL UNIADet DINOv3 EXPERIMENTS COMPLETED!"
+echo "ALL UNIADet ZERO-SHOT LATE-FUSION EXPERIMENTS COMPLETED!"
 echo "================================================================"

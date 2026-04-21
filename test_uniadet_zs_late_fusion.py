@@ -5,7 +5,7 @@ import random
 import numpy as np
 import torch
 
-from UniADet_lib import UniADetZeroShot, get_backbone_data_config, load_backbone
+from UniADet_lib import UniADetZeroShotLateFusion, get_backbone_data_config, load_backbone
 from utils.logger import get_logger
 from utils.transforms import get_transform
 from utils.uniadet_eval import evaluate_uniadet_model
@@ -29,7 +29,7 @@ def load_model_from_checkpoint(checkpoint_path, device):
         device=device,
         image_size=checkpoint["image_size"],
     )
-    model = UniADetZeroShot(
+    model = UniADetZeroShotLateFusion(
         backbone=backbone,
         feature_layers=checkpoint["features_list"],
         image_size=checkpoint["image_size"],
@@ -60,15 +60,15 @@ def test(args):
         logger=logger,
         data_mode=args.data_mode,
         num_workers=args.num_workers,
-        desc="UniADet-ZS test",
+        desc="UniADet-ZS-LateFusion test",
         compute_original_size_metrics=args.eval_original_size,
     )
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser("UniADet Zero-Shot Test", add_help=True)
+    parser = argparse.ArgumentParser("UniADet Zero-Shot Test (Late Fusion)", add_help=True)
     parser.add_argument("--test_data_path", type=str, required=True, help="test dataset path")
-    parser.add_argument("--save_path", type=str, default="./test_results_uniadet_zs", help="result save path")
+    parser.add_argument("--save_path", type=str, default="./test_results_uniadet_zs_late_fusion", help="result save path")
     parser.add_argument("--test_dataset", type=str, required=True, help="test dataset name")
     parser.add_argument("--data_mode", type=str, default="test", choices=["train", "test"], help="meta split to use")
     parser.add_argument("--checkpoint_path", type=str, required=True, help="checkpoint path")

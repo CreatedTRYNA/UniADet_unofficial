@@ -3,21 +3,25 @@
 set -e
 
 BATCH_SIZE=8
-GPU=cuda:6
-BACKBONE="DINOv3 ViT-L/16"
-IMAGE_SIZE=512
+GPU=cuda:2
+BACKBONE="ViT-L/14@336px"
+IMAGE_SIZE=518
 TEMPERATURE=0.07
 SCORE_FUSION_WEIGHT=0.5
+CLS_LOSS_WEIGHT=1.0
+SEG_LOSS_WEIGHT=0.5
 FEATURE_LAYERS=(12 15 18 21 24)
 ENABLE_CAA=1
 EVAL_INTERVAL=3
 EVAL_METRIC="mean_auc"
+RUN_TIMESTAMP=$(date '+%Y%m%d_%H%M%S')
 
 MVTEC_PATH="/mnt/nvme-data1/pzh_proj/datasets/mvtec"
 VISA_PATH="/mnt/nvme-data1/pzh_proj/datasets/visa"
 
 echo "================================================================"
-echo "UniADet Zero-Shot Cross-Dataset Evaluation - DINOv3 ViT-L/16"
+echo "UniADet Zero-Shot Cross-Dataset Evaluation - CLIP"
+echo "Loss Setting: total = 1.0 * cls + 0.5 * seg"
 echo "================================================================"
 echo "Batch Size: ${BATCH_SIZE}"
 echo "GPU: ${GPU}"
@@ -25,6 +29,7 @@ echo "Backbone: ${BACKBONE}"
 echo "Image Size: ${IMAGE_SIZE}"
 echo "Temperature: ${TEMPERATURE}"
 echo "Score Fusion Weight: ${SCORE_FUSION_WEIGHT}"
+echo "Loss Weights: cls=${CLS_LOSS_WEIGHT}, seg=${SEG_LOSS_WEIGHT}"
 echo "Feature Layers: ${FEATURE_LAYERS[*]}"
 echo "Periodic Eval: every ${EVAL_INTERVAL} epochs"
 echo "Best Checkpoint Metric: ${EVAL_METRIC}"
@@ -36,6 +41,7 @@ fi
 echo "Dataset Paths:"
 echo "  - MVTec: ${MVTEC_PATH}"
 echo "  - VisA:  ${VISA_PATH}"
+echo "Run Timestamp: ${RUN_TIMESTAMP}"
 echo "Epoch Configuration:"
 echo "  - MVTec -> VisA: 15 epochs"
 echo "  - VisA -> MVTec: 15 epochs"
@@ -50,7 +56,7 @@ run_uniadet_zs_experiment() {
     local epochs=$5
 
     local exp_name="${train_dataset}_to_${test_dataset}"
-    local exp_dir="./experiments/uniadet_zs_dinov3/${exp_name}"
+    local exp_dir="./experiments/uniadet_zs_loss_cls1.0_seg0.5/${exp_name}/${RUN_TIMESTAMP}"
     local checkpoint_dir="${exp_dir}/checkpoints"
     local result_dir="${exp_dir}/results"
 
@@ -75,6 +81,8 @@ run_uniadet_zs_experiment() {
             --image_size "${IMAGE_SIZE}" \
             --temperature "${TEMPERATURE}" \
             --score_fusion_weight "${SCORE_FUSION_WEIGHT}" \
+            --cls_loss_weight "${CLS_LOSS_WEIGHT}" \
+            --seg_loss_weight "${SEG_LOSS_WEIGHT}" \
             --test_data_path "${test_path}" \
             --test_dataset "${test_dataset}" \
             --eval_interval "${EVAL_INTERVAL}" \
@@ -94,6 +102,8 @@ run_uniadet_zs_experiment() {
             --image_size "${IMAGE_SIZE}" \
             --temperature "${TEMPERATURE}" \
             --score_fusion_weight "${SCORE_FUSION_WEIGHT}" \
+            --cls_loss_weight "${CLS_LOSS_WEIGHT}" \
+            --seg_loss_weight "${SEG_LOSS_WEIGHT}" \
             --test_data_path "${test_path}" \
             --test_dataset "${test_dataset}" \
             --eval_interval "${EVAL_INTERVAL}" \
@@ -151,5 +161,5 @@ run_uniadet_zs_experiment \
 
 echo ""
 echo "================================================================"
-echo "ALL UNIADet DINOv3 EXPERIMENTS COMPLETED!"
+echo "ALL UNIADet ZERO-SHOT LOSS-WEIGHT EXPERIMENTS COMPLETED!"
 echo "================================================================"

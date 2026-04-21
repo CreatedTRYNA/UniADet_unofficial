@@ -19,7 +19,10 @@ def get_transform(args, mean=None, std=None):
         std=std or OPENAI_DATASET_STD,
     )
     target_transform = transforms.Compose([
-        transforms.Resize((args.image_size, args.image_size)),
+        transforms.Resize(
+            (args.image_size, args.image_size),
+            interpolation=transforms.InterpolationMode.NEAREST,
+        ),
         transforms.CenterCrop(args.image_size),
         transforms.ToTensor()
     ])
